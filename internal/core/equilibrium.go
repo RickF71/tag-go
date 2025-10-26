@@ -2,6 +2,9 @@ package core
 
 import "math"
 
+// epsilon is a small value used to prevent division by zero.
+const epsilon = 1e-10
+
 // System represents a dimensional system with nodes and equilibrium state.
 type System struct {
 	Nodes       []*Node
@@ -63,7 +66,7 @@ func (s *System) ComputeEquilibrium() float64 {
 	// Using a normalized difference metric
 	if len(s.Constraints) > 0 {
 		avgConstraint := totalConstraint / float64(len(s.Constraints))
-		s.Equilibrium = 1.0 - math.Abs(avgFunction-avgConstraint)/(math.Abs(avgFunction)+math.Abs(avgConstraint)+1e-10)
+		s.Equilibrium = 1.0 - math.Abs(avgFunction-avgConstraint)/(math.Abs(avgFunction)+math.Abs(avgConstraint)+epsilon)
 	} else {
 		s.Equilibrium = avgFunction
 	}

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Error ToteBubbles Observatory</title>
+<style>
+html,body {margin:0;padding:0;background:#0b0b0b;height:100%;overflow:hidden;font-family:sans-serif;}
+#ui {
+  position:fixed;top:0;left:0;right:0;z-index:10;
+  background:rgba(20,20,20,0.85);color:#ccc;
+  padding:6px 10px;display:flex;gap:20px;align-items:center;
+  border-bottom:1px solid #333;
+}
+label {font-size:13px;}
+input[type=range]{width:120px;accent-color:#22c55e;}
+canvas{position:absolute;top:0;left:0;width:100vw;height:100vh;display:block;z-index:0;}
+</style>
+</head>
+<body>
+<div id="ui">
+  <label>Viscosity <input type="range" id="visc" min="0" max="1" step="0.01" value="0.5"></label>
+  <label>Limit <input type="range" id="limit" min="0" max="10" step="0.1" value="5"></label>
+  <label>Δt <input type="range" id="dt" min="0.001" max="0.2" step="0.001" value="0.05"></label>
+</div>
+<canvas id="c"></canvas>
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+function resize(){c.width=innerWidth;c.height=innerHeight;}addEventListener('resize',resize);resize();
+function currentParams(){return{
+  viscosity:parseFloat(visc.value),
+  limit:parseFloat(limit.value),
+  dt:parseFloat(dt.value)
+};}
+['visc','limit','dt'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{
+    fetch('/api/tag/params',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(currentParams())});
+  });
+});
+let latest=null,lastStep=-1;
+new EventSource('/stream').onmessage=e=>latest=JSON.parse(e.data);
+function drawVector(x1,y1,x2,y2,color,w=1,a=1){ctx.save();ctx.globalAlpha=a;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=w;ctx.stroke();ctx.restore();}
+function drawBubble(label,color,x,y,r,excess=0){
+  const instability=Math.min(1,Math.abs(excess)*10);
+  const alpha=0.3+0.7*instability;
+  let strokeColor=color;
+  if(instability>0.5&&color==="#22c55e")strokeColor=`rgb(${180+75*instability},${255*instability},80)`;
+  ctx.save();ctx.globalAlpha=alpha;
+  ctx.beginPath();ctx.arc(x,y,r,0,2*Math.PI);ctx.strokeStyle=strokeColor;ctx.lineWidth=2;ctx.stroke();ctx.restore();
+  ctx.fillStyle="#aaa";ctx.font="12px sans-serif";ctx.fillText(label,x-18,y-r-8);
+}
+function loop(){
+  requestAnimationFrame(loop);
+  if(!latest||!latest.bubbles||!Array.isArray(latest.bubbles))return;
+  if(latest.step===lastStep)return;lastStep=latest.step;
+  ctx.clearRect(0,0,c.width,c.height);
+  const spacing=c.width/5,baseY=c.height/2-120,errY=baseY+240;
+  const totePos={},errPos={};["A","B","C","D"].forEach((n,i)=>{totePos[n]=[spacing*(i+1),baseY];errPos[n]=[spacing*(i+1),errY];});
+//   for(let i=0;i<3;i++){const n=["A","B","C","D"],a=n[i],b=n[i+1];const[x1,y1]=totePos[a],[x2,y2]=totePos[b];
+//     drawVector(x1,y1,x2,y2,"#22c55e",2.5,0.7);drawVector(x2,y2+8,x1,y1+8,"#666",1.5,0.4);}
+//   for(let i=0;i<3;i++){const n=["A","B","C","D"],a=n[i],b=n[i+1];const[x1,y1]=errPos[a],[x2,y2]=errPos[b];
+//     drawVector(x1,y1,x2,y2,"#e11d48",2,0.7);drawVector(x2,y2+8,x1,y1+8,"#500",1.5,0.4);}
+  ["A","B","C","D"].forEach(n=>{const[tx,ty]=totePos[n],[ex,ey]=errPos[n];drawVector(tx,ty,ex,ey,"#444",1,0.8);});
+  // --- Draw totebubbles with internal chaos cores ---
+    ["A","B","C","D"].forEach(name => {
+    const tote = latest.bubbles.find(b => b.label === name + ".tote");
+    const err  = latest.bubbles.find(b => b.label === name + ".err");
+    const pos  = totePos[name];
+    if (!tote || !pos) return;
+
+    // Outer totebubble (green shell)
+    const R = Math.max(8, tote.radius * 320);
+    drawBubble(tote.label, "#22c55e", pos[0], pos[1], R, tote.excess);
+
+    // Inner chaos core (drawn *inside* totebubble)
+    if (err) {
+        const instability = Math.min(1, Math.abs(err.excess || 0) * 10);
+        const innerR = R * (0.55 * instability + 0.15);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pos[0], pos[1], innerR, 0, 2 * Math.PI);
+
+        // Color fades from bright red (chaos) to clear (stable)
+        const fillAlpha = 0.6 * instability;               // bright when unstable
+        const strokeAlpha = 0.2 + 0.6 * (1 - instability); // outline stronger when calm
+
+        ctx.fillStyle   = `rgba(225,29,72,${fillAlpha})`;   // red fill fades to clear
+        ctx.strokeStyle = `rgba(225,29,72,${strokeAlpha})`; // red outline remains
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+    });
+
+    // Inner chaosbubble (refined equilibrium glow)
+    if (err) {
+    const instability = Math.min(1, Math.abs(err.excess || 0) * 10);
+    const innerR = R * (0.55 * instability + 0.15); // always visible, expands slightly with chaos
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pos[0], pos[1], innerR, 0, 2 * Math.PI);
+
+    // Dynamic fill and border
+    const fillAlpha = Math.pow(instability, 1.5) * 0.6; // stabilibity
+    //const fillAlpha = 0.6 * instability;   // bright fill when unstable
+    const strokeAlpha = 0.2 + 0.6 * (1 - instability); // stronger outline as it stabilizes
+
+    ctx.fillStyle = `rgba(225,29,72,${fillAlpha})`; // bright red fill when unstable
+    ctx.strokeStyle = `rgba(225,29,72,${strokeAlpha})`; // translucent border when calm
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    }
+
+}
+loop();
+</script>
+</body>
+</html>

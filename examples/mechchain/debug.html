@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TotCircle State Debugger</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#0f0;font-family:monospace;}
+  #out{position:fixed;top:0;left:0;background:#000;padding:6px;font-size:12px;
+       max-height:150px;overflow:auto;white-space:pre;z-index:10;}
+  canvas{display:block;width:100%;height:100%;}
+</style>
+</head>
+<body>
+<pre id="out">waiting…</pre>
+<canvas id="cv"></canvas>
+<script>
+const out = document.getElementById("out");
+const cv  = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+function resize(){cv.width=innerWidth;cv.height=innerHeight;}
+window.addEventListener("resize",resize);resize();
+
+const scale=400, origin={x:cv.width/2-300,y:cv.height/2};
+
+async function poll(){
+  try{
+    const r=await fetch("/api/state");
+    const d=await r.json();
+    out.textContent=JSON.stringify(d,null,2);   // show raw JSON
+
+    ctx.clearRect(0,0,cv.width,cv.height);
+    const nodes=(d.nodes||[]).map(p=>({
+      x:p.x??p.X??0,
+      y:p.y??p.Y??0
+    }));
+
+    nodes.forEach((p,i)=>{
+      const x=origin.x+p.x*scale;
+      const y=origin.y+p.y*scale;
+      ctx.beginPath();
+      ctx.arc(x,y,15,0,Math.PI*2);
+      ctx.fillStyle=`hsl(${i*90},100%,60%)`;
+      ctx.fill();
+      ctx.strokeStyle="#fff";
+      ctx.stroke();
+    });
+  }catch(e){
+    out.textContent="Fetch failed: "+e;
+  }
+}
+setInterval(poll,1000);
+</script>
+</body>
+</html>

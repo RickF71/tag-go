@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>TAG Observatory</title>
+<style>
+  body { background:#0a0a0a; color:#eee; font-family:sans-serif; overflow:hidden; margin:0;}
+  #canvas { width:100vw; height:100vh; display:block; }
+  .hud { position:absolute; top:10px; left:10px; color:#0f0; font:14px monospace; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="hud" id="hud">connecting…</div>
+
+<script>
+const hud = document.getElementById("hud");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth; canvas.height = innerHeight;
+
+let step=0, total=0, meta=0;
+let color = v => v>0.5 ? "#ff0080" : "#00ffff";
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const cx=canvas.width/2, cy=canvas.height/2;
+  const r1 = 100 + total*200;
+  const r2 = 150 + meta*200;
+  ctx.beginPath(); ctx.strokeStyle=color(total); ctx.lineWidth=3;
+  ctx.arc(cx,cy,r1,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.strokeStyle=color(meta); ctx.lineWidth=2;
+  ctx.arc(cx,cy,r2,0,Math.PI*2); ctx.stroke();
+  hud.textContent=`step:${step}  total_error:${total.toFixed(4)}  meta:${meta.toFixed(4)}`;
+  requestAnimationFrame(draw);
+}
+draw();
+
+// Subscribe to the live SSE stream
+const es = new EventSource("/api/tag/stream");
+es.onmessage = e => {
+  try {
+    const d = JSON.parse(e.data);
+    step = d.step; total = d.total_error; meta = d.meta_energy;
+  } catch(err){ console.error(err); }
+};
+es.onerror = () => hud.textContent = "connection lost";
+</script>
+</body>
+</html>
